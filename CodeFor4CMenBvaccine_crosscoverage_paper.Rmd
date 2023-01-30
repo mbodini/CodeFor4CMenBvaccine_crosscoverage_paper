@@ -1,0 +1,101 @@
+---
+title: "Code for the paper The PorB and OpcA antigens contribute to cross-coverage induced by the 4CMenB vaccine"
+output: html_notebook
+---
+
+The code contained in this R notebook has been used to calculate the percentages present in Table 2 in the paper.
+In particular we used assemblies to extract the loci of the target genes in our analysis. After, we translated them into proteins and aligned them to calculate the identity percentage.
+
+```{bash}
+# repeats the analysis for each of the 30 loci 
+for i in NEIS2020 NEIS1364 NEIS1428 NEIS1783 NEIS0944 NEIS0408 NEIS2198 NEIS1963 NEIS1690 NEIS0173 NEIS0073 NEIS1468 NEIS0275 NEIS1487 NEIS1632 NEIS0101 NEIS1271 NEIS1687 NEIS0210 NEIS2075 NEIS1246 NEIS0612 NEIS1462 NEIS0172 NEIS1066 NEIS0596 NEIS1634 NEIS0653 NEIS0196 NEIS1065
+do
+        cd /path/to/dir
+        cd ${i}
+        # as a multifasta has been extracted from the internal PubMLST
+        # and directly translated with EMBOSS
+        # we divided the file into one file for each locus
+        grep "${i}" ../LociSequences_AA_multifa_linear.txt > ${i}_multifa_linear_AA.fa
+        # then the file is processed to pass from a tab separated file to a proper fasta file
+        sed "s/\s+\s${i}\t/\n/g" ${i}_multifa_linear_AA.fa > ${i}_multifa_AA.fa
+        mkdir AAseq
+        awk -F "|" '/^>/ {close(F); ID=$1; gsub("^>", "", ID); F="AAseq/"ID".fasta"} {print >> F}' ${i}_multifa_AA.fa
+        # runs needle
+        mkdir NeedleOutAA
+        lr=$(cut -d " " -f1 <(wc -m AAseq/2631.fasta))
+        for i in AAseq/*.fasta
+                do
+                g=$(basename $i)
+                needle -asequence $i -bsequence AAseq/2631.fasta -gapopen 10 -gapextend 0.5 -outfile NeedleOutAA/$g
+
+                lq=$(cut -d " " -f1 <(wc -m $i))
+                
+                # the shortest sequence is identified between the reference and the query (Lr and lq, respectively)
+                if [ $lq -gt $lr ]
+                        then
+                        min=$lr
+                        else
+                        min=$lq
+                fi
+                
+                #then the identity percentage is calculated on the minimum length between the two sequences
+                ide=$(cut -d "/" -f1 <(grep "Identity" NeedleOutAA/$g))
+                echo $g":"${ide}"/"${min} >> Needle_percAA.txt
+
+        done
+
+done
+
+cd /path/to/dir
+# summarized all the identity calculated into a single file
+grep Identity */NeedleOutAA/*.fasta | uniq | cut -d "/" -f1,3,4 | sed 's/\//\t/g;s/.fasta:# Identity:    /\t/g;s/ (/\t/g;s/%)//g' > Identity_AA_allstrains.txt
+
+```
+
+After we used the numbers calculated for each strain and each locus to produce a summary table that has been also reported in the paper.
+
+```{r}
+setwd("/path/to/dir")
+
+# file containing the computed identity percentages is uploaded
+IdentityCounts = read.delim("Identity_AA_allstrains.txt", sep = "\t", header = FALSE)
+IdentityCounts_df = data.frame(Locus = IdentityCounts$V1,
+                               Strain = IdentityCounts$V2,
+                               IdenticAAs = IdentityCounts$V3,
+                               Length = IdentityCounts$V4,
+                               IdePerc = as.numeric(as.character(IdentityCounts$V5)))
+
+#list of strains and of loci are defined
+StrainList = c("strain1", "strain2", "strain3", "strain4")
+LociList = unique(IdentityCounts_df$Locus)
+
+# Summary staistics are calculated for each locus 
+# including median, minumum, maximum ans mean
+Summary = sapply(LociList, FUN = function(X){
+  med = median(IdentityCounts_df$IdePerc[IdentityCounts_df$Locus %in% c(X) & 
+                                     IdentityCounts_df$Strain %in% StrainList])
+  min = min(IdentityCounts_df$IdePerc[IdentityCounts_df$Locus %in% c(X) & 
+                                        IdentityCounts_df$Strain %in% StrainList])
+  max = max(IdentityCounts_df$IdePerc[IdentityCounts_df$Locus %in% c(X) & 
+                                        IdentityCounts_df$Strain %in% StrainList])
+  mea = mean(IdentityCounts_df$IdePerc[IdentityCounts_df$Locus %in% c(X) & 
+                                         IdentityCounts_df$Strain %in% StrainList])
+  data.frame(Median = med, Minimum = min, Maximum = max, Mean = mea)
+})
+
+# We transpose the data frame
+SummaryT = data.frame(t(Summary))
+# Mean is rounded to 1 digit
+SummaryT$Mean = round(as.numeric(as.character(SummaryT$Mean)), digits = 1)
+# The column including median or mean with the maximum and minimum is produced
+SummaryT$ColMedian = paste0(SummaryT$Median, 
+                            "% (", SummaryT$Minimum, 
+                            "%-", SummaryT$Maximum,"%)")
+SummaryT$ColMean = paste0(SummaryT$Mean, 
+                          "% (", SummaryT$Minimum, "%-", SummaryT$Maximum,"%)")
+
+#the table is written to file
+write.table(x = as.matrix(SummaryT), file = "Summary_IdentityFactorX_AAlevel.txt", 
+            append = FALSE, sep = "\t", quote = FALSE, dec = ",", row.names = TRUE, col.names = TRUE)
+```
+
