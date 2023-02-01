@@ -1,5 +1,5 @@
 ---
-title: "Code for the paper The PorB and OpcA antigens contribute to cross-coverage induced by the 4CMenB vaccine"
+title: "Code for the paper Identification of OpcA and PorB as novel bactericidal antigens of the 4CMenB vaccine contributing to the cross-coverage of meningococcus in mice and humans"
 output: html_notebook
 ---
 
